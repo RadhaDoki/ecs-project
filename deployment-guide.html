@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ClearList ECS Deployment Guide</title>
+  <style>
+    :root { --ink:#17221f; --muted:#64706a; --paper:#f5f3ed; --panel:#fffdf8; --line:#d9d7ce; --green:#d6e5cf; --orange:#e26d4f; --blue:#dbe7f2; --purple:#e8def3; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:radial-gradient(circle at 12% 0%,#dce9d7 0,transparent 30%),var(--paper); font:15px/1.55 "Segoe UI",sans-serif; }
+    .page { width:min(1120px,calc(100% - 32px)); margin:auto; padding:42px 0 70px; }
+    .hero { padding:34px 0 28px; border-bottom:1px solid var(--line); }
+    .eyebrow { margin:0 0 10px; color:var(--orange); font-size:12px; font-weight:700; letter-spacing:2px; }
+    h1,h2,h3 { font-family:Georgia,serif; line-height:1.1; }
+    h1 { max-width:760px; margin:0; font-size:clamp(2.4rem,6vw,5rem); font-weight:500; }
+    h2 { margin:0 0 18px; font-size:2rem; }
+    h3 { margin:0 0 8px; font-size:1.25rem; }
+    .lead { max-width:720px; margin:18px 0 0; color:var(--muted); font-size:1.1rem; }
+    section { padding:42px 0 0; }
+    .architecture { display:grid; grid-template-columns:1fr auto 1fr auto 1fr; align-items:center; gap:18px; margin-top:24px; }
+    .service { min-height:210px; padding:24px; border:1px solid var(--line); background:var(--panel); box-shadow:0 14px 35px rgba(40,50,43,.07); }
+    .service.frontend { background:var(--green); border-color:#bdd0b6; }
+    .service.backend { background:var(--blue); border-color:#c2d5e4; }
+    .service.database { background:var(--purple); border-color:#d5c6e4; }
+    .service-label { color:var(--muted); font-size:12px; font-weight:700; letter-spacing:1px; text-transform:uppercase; }
+    .service h3 { margin-top:12px; }
+    .service p { color:var(--muted); }
+    .port { display:inline-block; padding:3px 8px; border:1px solid rgba(23,34,31,.2); border-radius:3px; font-family:Consolas,monospace; font-size:12px; }
+    .arrow { color:var(--orange); font-size:2rem; text-align:center; }
+    .flow { margin:20px 0 0; padding:18px; border-left:4px solid var(--orange); background:rgba(255,255,255,.55); }
+    .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:18px; }
+    .card { padding:24px; border:1px solid var(--line); background:rgba(255,255,255,.65); }
+    table { width:100%; border-collapse:collapse; background:var(--panel); }
+    th,td { padding:13px 14px; border:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { background:#e9e7de; font-size:13px; }
+    code { padding:2px 5px; border-radius:3px; background:#ebe9e1; font-family:Consolas,monospace; font-size:.9em; }
+    pre { overflow:auto; padding:18px; background:#202a26; color:#eaf2e9; font:13px/1.6 Consolas,monospace; }
+    ol,ul { margin:10px 0 0; padding-left:22px; }
+    li { margin:8px 0; }
+    .warning { border-left:4px solid var(--orange); background:#fff0e9; padding:16px 18px; }
+    .checklist { counter-reset:item; list-style:none; padding:0; }
+    .checklist li { counter-increment:item; display:grid; grid-template-columns:28px 1fr; gap:10px; }
+    .checklist li::before { content:counter(item); display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:var(--ink); color:#fff; font-size:12px; font-weight:700; }
+    .small { color:var(--muted); font-size:13px; }
+    @media (max-width:760px) { .architecture,.grid { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } .service { min-height:auto; } }
+    @media print { body { background:#fff; } .page { width:100%; padding:0; } section { break-inside:avoid; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">CLEARLIST / ECS REFERENCE</p>
+      <h1>Deploy the three-piece todo stack.</h1>
+      <p class="lead">Use this page while creating AWS resources manually. Jenkins builds and deploys the application images, but it does not create the VPC, ECS services, task definitions, EFS, or service discovery.</p>
+    </header>
+
+    <section>
+      <h2>Architecture</h2>
+      <div class="architecture">
+        <article class="service frontend"><span class="service-label">Public ECS service</span><h3>todo-frontend-service</h3><p>Nginx serves the static browser application and proxies <code>/api</code> requests to the backend.</p><span class="port">public :80</span></article>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <article class="service backend"><span class="service-label">Private ECS service</span><h3>todo-service</h3><p>Node.js and Express API. Handles OTP login, JWT authentication, and todo CRUD.</p><span class="port">internal :3000</span></article>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <article class="service database"><span class="service-label">Private ECS service</span><h3>todo-mysql-service</h3><p>MySQL 8.4 database. Stores users and todos on an EFS-mounted data directory.</p><span class="port">internal :3306</span></article>
+      </div>
+      <div class="flow"><strong>Testing URL:</strong> open <code>http://&lt;frontend-task-public-ip&gt;</code>. No ALB is required now. The frontend public IP may change when ECS replaces the task.</div>
+    </section>
+
+    <section>
+      <h2>What is in the code?</h2>
+      <table><thead><tr><th>Path</th><th>Purpose</th><th>Deployment role</th></tr></thead><tbody>
+        <tr><td><code>public/</code></td><td>HTML, CSS, and browser JavaScript</td><td>Copied into the Nginx frontend image</td></tr>
+        <tr><td><code>frontend/Dockerfile</code></td><td>Builds the Nginx frontend image</td><td>ECR repository: <code>todo-frontend</code></td></tr>
+        <tr><td><code>frontend/nginx.conf</code></td><td>Serves the UI and proxies API calls to <code>todo-service:3000</code></td><td>Used by the frontend ECS task</td></tr>
+        <tr><td><code>server.js</code></td><td>Express backend API and JWT authentication</td><td>ECR repository: <code>todo-app</code></td></tr>
+        <tr><td><code>db.js</code></td><td>MySQL connection pool and startup retry</td><td>Uses <code>DB_HOST=mysql.todo.local</code></td></tr>
+        <tr><td><code>init.sql</code></td><td>Creates the database, users table, and todos table</td><td>Copied into the MySQL image</td></tr>
+        <tr><td><code>mysql/Dockerfile</code></td><td>Builds MySQL with <code>init.sql</code></td><td>ECR repository: <code>todo-mysql</code></td></tr>
+        <tr><td><code>Jenkinsfile</code></td><td>Builds, pushes, and redeploys all three services</td><td>Runs in Jenkins</td></tr>
+      </tbody></table>
+    </section>
+
+    <section>
+      <h2>ECS terms</h2>
+      <div class="grid">
+        <article class="card"><h3>Task definition</h3><p>A task definition is the container blueprint. It specifies the Docker image, CPU, memory, container ports, environment variables, IAM roles, logs, and volumes such as EFS.</p><pre>Image: todo-app
+Port: 3000
+DB_HOST: mysql.todo.local
+Memory: 512 MB</pre></article>
+        <article class="card"><h3>Task</h3><p>A task is one running instance created from a task definition. ECS can replace it if it stops.</p><pre>Task definition: todo-app:1
+Running tasks: 1</pre></article>
+        <article class="card"><h3>Service</h3><p>An ECS service manages running tasks. It defines the task definition, desired count, networking, subnets, security groups, public IP assignment, service discovery, and restart behavior.</p><pre>Service: todo-service
+Task definition: todo-app:1
+Desired count: 1</pre></article>
+        <article class="card"><h3>Project mapping</h3><table><thead><tr><th>ECS service</th><th>Task definition</th><th>Running task</th></tr></thead><tbody>
+          <tr><td><code>todo-frontend-service</code></td><td>Frontend task definition</td><td>Nginx container</td></tr>
+          <tr><td><code>todo-service</code></td><td>Backend task definition</td><td>Node.js container</td></tr>
+          <tr><td><code>todo-mysql-service</code></td><td>MySQL task definition</td><td>MySQL container</td></tr>
+        </tbody></table></article>
+      </div>
+      <div class="flow"><strong>Relationship:</strong> task definition = blueprint &#8594; ECS service = manager &#8594; task = running container. Jenkins updates the services, and ECS replaces their running tasks using the configured task definitions.</div>
+    </section>
+
+    <section><h2>Create manually before Jenkins</h2><ol class="checklist">
+      <li><div><strong>VPC and subnets:</strong> Put the frontend in a public subnet. Put backend and MySQL in private subnets. For a temporary test without NAT, backend and MySQL can use public subnets with public IP assignment disabled.</div></li>
+      <li><div><strong>Security groups:</strong> Frontend allows TCP <code>80</code> from your test network. Backend allows TCP <code>3000</code> only from frontend. MySQL allows TCP <code>3306</code> only from backend. Never allow MySQL from the internet.</div></li>
+      <li><div><strong>ECR repositories:</strong> Create <code>todo-frontend</code>, <code>todo-app</code>, and <code>todo-mysql</code>.</div></li>
+      <li><div><strong>ECS cluster:</strong> Create <code>todo-cluster</code> using Fargate.</div></li>
+      <li><div><strong>IAM roles:</strong> Create an ECS task execution role with ECR pull and CloudWatch Logs permissions.</div></li>
+      <li><div><strong>EFS:</strong> Create EFS mount targets in the private-subnet Availability Zones and mount EFS at <code>/var/lib/mysql</code>.</div></li>
+      <li><div><strong>Service discovery:</strong> Create private DNS namespace <code>todo.local</code>. Register backend as <code>todo-service</code> and MySQL as <code>mysql</code>, producing <code>mysql.todo.local</code>.</div></li>
+      <li><div><strong>Task definitions:</strong> Create frontend port <code>80</code>, backend port <code>3000</code>, and MySQL port <code>3306</code>. Configure the environment variables below.</div></li>
+      <li><div><strong>ECS services:</strong> Create <code>todo-mysql-service</code>, <code>todo-service</code>, and <code>todo-frontend-service</code> with desired count <code>1</code>.</div></li>
+      <li><div><strong>No-ALB access:</strong> Set <code>assignPublicIp: ENABLED</code> only for the frontend service and open its task public IP.</div></li>
+      <li><div><strong>Private task egress:</strong> Backend and MySQL need a NAT Gateway or suitable ECR and CloudWatch VPC endpoints.</div></li>
+    </ol></section>
+
+    <section><h2>Task definition values</h2><div class="grid"><article class="card"><h3>Backend environment</h3><pre>PORT=3000
+DB_HOST=mysql.todo.local
+DB_PORT=3306
+DB_NAME=todo_app
+DB_USER=admin
+DB_PASSWORD=admin
+JWT_SECRET=change-this-in-production
+DUMMY_OTP=123456</pre></article><article class="card"><h3>MySQL environment</h3><pre>MYSQL_DATABASE=todo_app
+MYSQL_USER=admin
+MYSQL_PASSWORD=admin
+MYSQL_ROOT_PASSWORD=admin</pre></article></div><p class="small">The admin/admin values are for testing only. Use Secrets Manager or SSM Parameter Store in production.</p></section>
+
+    <section><h2>Jenkins setup</h2><div class="grid"><article class="card"><h3>Jenkins agent</h3><ul><li>Linux agent with Docker</li><li>AWS CLI installed</li><li>Pipeline and AWS Credentials Binding plugins</li><li>Network access to ECR and ECS APIs</li></ul></article><article class="card"><h3>Credentials</h3><ul><li><code>aws-credentials</code>: AWS credential</li><li><code>aws-region</code>: secret text such as <code>us-east-1</code></li><li><code>ecr-registry</code>: ECR registry hostname</li></ul></article></div><div class="flow"><strong>Pipeline order:</strong> build three images &#8594; push three ECR images &#8594; redeploy MySQL &#8594; wait &#8594; redeploy backend &#8594; wait &#8594; redeploy frontend.</div></section>
+
+    <section><h2>After resources are ready</h2><ol><li>Push this repository to GitHub.</li><li>Create a Jenkins Pipeline job pointing to <code>Jenkinsfile</code>.</li><li>Run with <code>IMAGE_TAG=latest</code> for testing.</li><li>Wait for all three services to stabilize.</li><li>Open the frontend task public IP on port <code>80</code>.</li><li>Sign in with any email and OTP <code>123456</code>.</li></ol><div class="warning"><strong>Important:</strong> Jenkins does not create AWS infrastructure, task definitions, service discovery, or EFS. Create those manually first.</div></section>
+  </main>
+</body>
+</html>
