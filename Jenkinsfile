@@ -6,6 +6,7 @@ pipeline {
   }
 
   environment {
+    IMAGE_TAG = "${params.IMAGE_TAG}"
     AWS_DEFAULT_REGION = credentials('aws-region')
     ECR_REPOSITORY = 'todo-app'
     MYSQL_ECR_REPOSITORY = 'todo-mysql'
@@ -21,10 +22,6 @@ pipeline {
   }
 
   stages {
-    stage('Checkout') {
-      steps { checkout scm }
-    }
-
     stage('Validate') {
       steps {
         sh 'docker build --tag todo-app:${IMAGE_TAG} .'
